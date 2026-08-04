@@ -1,2 +1,2 @@
 # cadence-monitor-agent
-Python-based monitoring agent for Cadence laboratory services. Connects via SSH, checks tool and license availability, and updates the Cadence Status Monitor.
+Cadence Monitor Agent is a Python automation tool that connects to a Cadence laboratory environment via SSH, verifies service and tool availability, generates status information, and publishes updates for the Cadence Status Monitor website.
