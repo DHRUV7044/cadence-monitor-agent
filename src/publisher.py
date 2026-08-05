@@ -22,6 +22,8 @@ def publish_status(settings):
     if not (settings.pages_repo / ".git").exists():
         raise FileNotFoundError(f"Not a git repository: {settings.pages_repo}")
 
+    _run_git(settings, "pull", "--rebase")
+
     destination.parent.mkdir(parents=True, exist_ok=True)
     same_file = source.resolve() == destination.resolve()
 

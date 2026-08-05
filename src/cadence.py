@@ -9,7 +9,8 @@ from settings import Settings
 
 
 LOGGER = logging.getLogger(__name__)
-MENU_ENTRY_RE = re.compile(r"^\s*(?P<choice>\d+)\s+(?P<label>.+?)\s*$")
+NUMBER_FIRST_MENU_ENTRY_RE = re.compile(r"^\s*(?P<choice>\d+)\s+(?P<label>.+?)\s*$")
+LABEL_FIRST_MENU_ENTRY_RE = re.compile(r"^\s*(?P<label>.+?)\s*:\s*(?P<choice>\d+)\s*$")
 
 
 class CadenceCheckResult:
@@ -90,11 +91,48 @@ def _read_until_menu_entry(child, menu_name, timeout_seconds):
 
 def _find_menu_choice(output, menu_name):
     expected = menu_name.casefold()
+    label_first_choice = _find_label_first_menu_choice(output, menu_name)
+    if label_first_choice is not None:
+        return label_first_choice
+
     for line in output.splitlines():
-        match = MENU_ENTRY_RE.match(line)
-        if match and match.group("label").strip().casefold() == expected:
-            return match.group("choice")
+        entry = _parse_menu_entry(line)
+        if entry is None:
+            continue
+
+        choice, label = entry
+        if _normalize_menu_label(label) == expected:
+            return choice
     return None
+
+
+def _find_label_first_menu_choice(output, menu_name):
+    menu_name_pattern = re.escape(menu_name).replace(r"\ ", r"[\s_]+")
+    pattern = re.compile(
+        r"(?:^|\s)(?:No\s+)?"
+        + menu_name_pattern
+        + r"[_\s]*:\s*(?P<choice>\d+)",
+        re.IGNORECASE,
+    )
+    match = pattern.search(output)
+    if match:
+        return match.group("choice")
+    return None
+
+
+def _parse_menu_entry(line):
+    for pattern in (NUMBER_FIRST_MENU_ENTRY_RE, LABEL_FIRST_MENU_ENTRY_RE):
+        match = pattern.match(line)
+        if match:
+            return match.group("choice"), match.group("label")
+    return None
+
+
+def _normalize_menu_label(label):
+    cleaned = label.replace("_", " ").strip()
+    if cleaned.casefold().startswith("no "):
+        cleaned = cleaned[3:].strip()
+    return " ".join(cleaned.split()).casefold()
 
 
 def _wait_for_virtuoso_startup(
