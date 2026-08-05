@@ -1,0 +1,7 @@
+[project]
+name = "cadence-monitor-agent"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "pexpect>=4.9.0",
+]
