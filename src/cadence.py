@@ -1,6 +1,9 @@
 import logging
+import os
 import re
+import signal
 import shlex
+import subprocess
 import time
 
 import pexpect
@@ -27,6 +30,7 @@ class MenuSelectionError(RuntimeError):
 def check_virtuoso_license(settings):
     # type: (Settings) -> CadenceCheckResult
     child = None
+    existing_virtuoso_pids = _current_virtuoso_pids()
 
     try:
         command = shlex.split(settings.cadence_shell_command)
@@ -61,6 +65,7 @@ def check_virtuoso_license(settings):
     finally:
         if child is not None:
             _terminate_process(child)
+        _terminate_new_virtuoso_processes(existing_virtuoso_pids)
 
 
 def _select_menu_entry(child, menu_name, timeout_seconds):
@@ -190,7 +195,7 @@ def _terminate_process(child):
     if not child.isalive():
         return
 
-    LOGGER.info("Terminating Cadence/Virtuoso process tree")
+    LOGGER.info("Terminating Cadence launcher process")
     child.sendcontrol("c")
     time.sleep(1)
 
@@ -200,6 +205,71 @@ def _terminate_process(child):
 
     if child.isalive():
         child.terminate(force=True)
+
+
+def _terminate_new_virtuoso_processes(existing_pids):
+    new_pids = _current_virtuoso_pids() - existing_pids
+    if not new_pids:
+        return
+
+    LOGGER.info("Terminating new Virtuoso processes: %s", sorted(new_pids))
+    _signal_processes(new_pids, signal.SIGTERM)
+    time.sleep(2)
+
+    still_running = _current_virtuoso_pids() & new_pids
+    if still_running:
+        LOGGER.warning("Force terminating Virtuoso processes: %s", sorted(still_running))
+        _signal_processes(still_running, signal.SIGKILL)
+
+
+def _current_virtuoso_pids():
+    try:
+        result = subprocess.run(
+            ["ps", "-u", str(os.getuid()), "-o", "pid=,comm=,args="],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            universal_newlines=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        LOGGER.warning("Could not inspect Virtuoso processes: %s", exc)
+        return set()
+
+    pids = set()
+    for line in result.stdout.splitlines():
+        parsed = _parse_process_line(line)
+        if parsed is None:
+            continue
+
+        pid, command_text = parsed
+        if pid != os.getpid() and "virtuoso" in command_text.casefold():
+            pids.add(pid)
+
+    return pids
+
+
+def _parse_process_line(line):
+    parts = line.strip().split(None, 2)
+    if len(parts) < 2:
+        return None
+
+    try:
+        pid = int(parts[0])
+    except ValueError:
+        return None
+
+    command_text = " ".join(parts[1:])
+    return pid, command_text
+
+
+def _signal_processes(pids, sig):
+    for pid in sorted(pids):
+        try:
+            os.kill(pid, sig)
+        except ProcessLookupError:
+            continue
+        except PermissionError as exc:
+            LOGGER.warning("Could not terminate process %s: %s", pid, exc)
 
 
 def _compact_output(output, max_chars=500):

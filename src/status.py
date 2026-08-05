@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
@@ -16,7 +16,7 @@ def build_status_document(
     previous_status_path,
 ):
     # type: (Settings, CadenceCheckResult, Path) -> Dict[str, Any]
-    now = _utc_now()
+    now = _india_now()
     status_value = "online" if result.online else "offline"
     last_success = now if result.online else _read_previous_last_success(previous_status_path)
 
@@ -80,6 +80,7 @@ def _validate_status(status):
     return status
 
 
-def _utc_now():
+def _india_now():
     # type: () -> str
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    india_timezone = timezone(timedelta(hours=5, minutes=30))
+    return datetime.now(india_timezone).replace(microsecond=0).isoformat()
