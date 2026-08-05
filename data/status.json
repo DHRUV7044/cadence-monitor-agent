@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-08-05T00:00:00Z",
+  "monitor": {
+    "name": "Cadence Status Monitor",
+    "host": "Lab Monitor"
+  },
+  "services": [
+    {
+      "id": "virtuoso",
+      "name": "Virtuoso",
+      "status": "unknown",
+      "message": "Monitor has not run yet",
+      "last_success": null
+    }
+  ]
+}

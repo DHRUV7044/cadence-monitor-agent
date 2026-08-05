@@ -1,134 +1,182 @@
 from __future__ import annotations
 
+import logging
+import os
+import re
+import signal
+import shlex
+import time
+from dataclasses import dataclass
+
 import pexpect
 
-from logger import setup_logger
-
-logger = setup_logger(__name__)
+from settings import Settings
 
 
-class VirtuosoChecker:
-    """
-    Launches Virtuoso through the interactive Cadence menu.
-    """
+LOGGER = logging.getLogger(__name__)
+MENU_ENTRY_RE = re.compile(r"^\s*(?P<choice>\d+)\s+(?P<label>.+?)\s*$")
 
-    def __init__(self) -> None:
-        self.process: pexpect.spawn | None = None
 
-    def check(self) -> tuple[str, str]:
-        """
-        Returns:
-            (status, message)
+@dataclass(frozen=True)
+class CadenceCheckResult:
+    online: bool
+    message: str
 
-        status:
-            online
-            offline
-            warning
-            unknown
-        """
 
-        try:
-            self.process = pexpect.spawn(
-                "/bin/csh",
-                encoding="utf-8",
-                timeout=60,
-            )
+class MenuSelectionError(RuntimeError):
+    pass
 
-            #
-            # Wait for first menu
-            #
-            self.process.expect("Cadence tools Suite")
 
-            logger.info("Main menu detected.")
+def check_virtuoso_license(settings: Settings) -> CadenceCheckResult:
+    child: pexpect.spawn | None = None
 
-            #
-            # Select Cadence
-            #
-            self.process.sendline("1")
+    try:
+        command = shlex.split(settings.cadence_shell_command)
+        if not command:
+            raise ValueError("CADENCE_SHELL_COMMAND cannot be empty")
 
-            #
-            # Wait for second menu
-            #
-            self.process.expect("Virtuoso")
+        LOGGER.info("Starting Cadence shell command: %s", settings.cadence_shell_command)
+        child = pexpect.spawn(
+            command[0],
+            command[1:],
+            encoding="utf-8",
+            codec_errors="replace",
+            timeout=1,
+            preexec_fn=os.setsid,
+        )
 
-            logger.info("Cadence menu detected.")
+        _select_menu_entry(child, settings.top_menu_name, settings.menu_timeout_seconds)
+        LOGGER.info("Selected top-level menu entry: %s", settings.top_menu_name)
 
-            #
-            # Select Virtuoso
-            #
-            self.process.sendline("101")
+        _select_menu_entry(child, settings.virtuoso_menu_name, settings.menu_timeout_seconds)
+        LOGGER.info("Selected tool menu entry: %s", settings.virtuoso_menu_name)
 
-            #
-            # Read output for 20 seconds
-            #
-            index = self.process.expect(
-                [
-                    "License checkout failed",
-                    "Unable to obtain license",
-                    "Segmentation fault",
-                    "DISPLAY",
-                    pexpect.TIMEOUT,
-                    pexpect.EOF,
-                ],
-                timeout=20,
-            )
+        return _wait_for_virtuoso_startup(child, settings)
+    except MenuSelectionError as exc:
+        LOGGER.warning("Menu selection failed: %s", exc)
+        return CadenceCheckResult(online=False, message=str(exc))
+    except pexpect.ExceptionPexpect as exc:
+        LOGGER.exception("Cadence terminal automation failed")
+        return CadenceCheckResult(online=False, message=f"Cadence automation failed: {exc}")
+    except Exception as exc:
+        LOGGER.exception("Unexpected Virtuoso check failure")
+        return CadenceCheckResult(online=False, message=f"Virtuoso check failed: {exc}")
+    finally:
+        if child is not None:
+            _terminate_process(child)
 
-            if index == 0:
-                return (
-                    "offline",
-                    "License checkout failed",
-                )
 
-            if index == 1:
-                return (
-                    "offline",
-                    "Unable to obtain license",
-                )
+def _select_menu_entry(child: pexpect.spawn, menu_name: str, timeout_seconds: int) -> None:
+    menu_output = _read_until_menu_entry(child, menu_name, timeout_seconds)
+    choice = _find_menu_choice(menu_output, menu_name)
+    if choice is None:
+        raise MenuSelectionError(f"Menu entry '{menu_name}' was not found")
 
-            if index == 2:
-                return (
-                    "offline",
-                    "Virtuoso crashed",
-                )
+    child.sendline(choice)
 
-            if index == 3:
-                return (
-                    "warning",
-                    "DISPLAY problem",
-                )
 
-            #
-            # If nothing failed in timeout,
-            # assume Virtuoso started.
-            #
-            return (
-                "online",
-                "Virtuoso started successfully",
-            )
+def _read_until_menu_entry(child: pexpect.spawn, menu_name: str, timeout_seconds: int) -> str:
+    deadline = time.monotonic() + timeout_seconds
+    output = ""
 
-        except pexpect.TIMEOUT:
+    while time.monotonic() < deadline:
+        output += _read_available(child, timeout=1)
+        if _find_menu_choice(output, menu_name) is not None:
+            return output
+        if not child.isalive():
+            output += child.before or ""
+            break
 
-            logger.exception("Timeout while launching Virtuoso.")
+    raise MenuSelectionError(
+        f"Timed out waiting for menu entry '{menu_name}'. Last output: {_compact_output(output)}"
+    )
 
-            return (
-                "unknown",
-                "Timeout",
-            )
 
-        except Exception as exc:
+def _find_menu_choice(output: str, menu_name: str) -> str | None:
+    expected = menu_name.casefold()
+    for line in output.splitlines():
+        match = MENU_ENTRY_RE.match(line)
+        if match and match.group("label").strip().casefold() == expected:
+            return match.group("choice")
+    return None
 
-            logger.exception(exc)
 
-            return (
-                "unknown",
-                str(exc),
-            )
+def _wait_for_virtuoso_startup(
+    child: pexpect.spawn,
+    settings: Settings,
+) -> CadenceCheckResult:
+    deadline = time.monotonic() + settings.launch_timeout_seconds
+    settle_deadline: float | None = None
+    output = ""
 
-        finally:
+    while time.monotonic() < deadline:
+        chunk = _read_available(child, timeout=1)
+        if chunk:
+            output += chunk
+            failure = _find_failure(output, settings.failure_patterns)
+            if failure is not None:
+                return CadenceCheckResult(online=False, message=f"Virtuoso failed: {failure}")
 
-            if self.process is not None:
+        if not child.isalive():
+            output += child.before or ""
+            failure = _find_failure(output, settings.failure_patterns)
+            if failure is not None:
+                return CadenceCheckResult(online=False, message=f"Virtuoso failed: {failure}")
+            return CadenceCheckResult(online=False, message="Virtuoso exited before startup completed")
 
-                try:
-                    self.process.close(force=True)
-                except Exception:
-                    pass
+        if settle_deadline is None:
+            settle_deadline = time.monotonic() + settings.successful_launch_settle_seconds
+        elif time.monotonic() >= settle_deadline:
+            return CadenceCheckResult(online=True, message="Virtuoso started successfully")
+
+    failure = _find_failure(output, settings.failure_patterns)
+    if failure is not None:
+        return CadenceCheckResult(online=False, message=f"Virtuoso failed: {failure}")
+    return CadenceCheckResult(online=False, message="Timed out waiting for Virtuoso startup")
+
+
+def _find_failure(output: str, failure_patterns: tuple[str, ...]) -> str | None:
+    normalized_output = output.casefold()
+    for pattern in failure_patterns:
+        if pattern.casefold() in normalized_output:
+            return pattern
+    return None
+
+
+def _read_available(child: pexpect.spawn, timeout: int) -> str:
+    try:
+        return child.read_nonblocking(size=4096, timeout=timeout)
+    except pexpect.TIMEOUT:
+        return ""
+    except pexpect.EOF:
+        return child.before or ""
+
+
+def _terminate_process(child: pexpect.spawn) -> None:
+    if not child.isalive():
+        return
+
+    LOGGER.info("Terminating Cadence/Virtuoso process tree")
+    child.sendcontrol("c")
+    time.sleep(1)
+
+    if child.isalive():
+        _signal_process_group(child.pid, signal.SIGTERM)
+        time.sleep(1)
+
+    if child.isalive():
+        _signal_process_group(child.pid, signal.SIGKILL)
+
+
+def _signal_process_group(pid: int, sig: signal.Signals) -> None:
+    try:
+        os.killpg(os.getpgid(pid), sig)
+    except ProcessLookupError:
+        return
+
+
+def _compact_output(output: str, max_chars: int = 500) -> str:
+    compacted = " ".join(output.split())
+    if len(compacted) <= max_chars:
+        return compacted
+    return compacted[-max_chars:]
