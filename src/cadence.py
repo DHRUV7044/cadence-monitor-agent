@@ -1,7 +1,5 @@
 import logging
-import os
 import re
-import signal
 import shlex
 import time
 
@@ -41,7 +39,6 @@ def check_virtuoso_license(settings):
             encoding="utf-8",
             codec_errors="replace",
             timeout=1,
-            preexec_fn=os.setsid,
         )
 
         _select_menu_entry(child, settings.top_menu_name, settings.menu_timeout_seconds)
@@ -160,18 +157,11 @@ def _terminate_process(child):
     time.sleep(1)
 
     if child.isalive():
-        _signal_process_group(child.pid, signal.SIGTERM)
+        child.terminate(force=False)
         time.sleep(1)
 
     if child.isalive():
-        _signal_process_group(child.pid, signal.SIGKILL)
-
-
-def _signal_process_group(pid, sig):
-    try:
-        os.killpg(os.getpgid(pid), sig)
-    except ProcessLookupError:
-        return
+        child.terminate(force=True)
 
 
 def _compact_output(output, max_chars=500):

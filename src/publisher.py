@@ -36,9 +36,9 @@ def publish_status(settings):
         LOGGER.info("No git changes after copying status file")
         return False
 
-    _run_git(settings.pages_repo, "add", str(destination.relative_to(settings.pages_repo)))
-    _run_git(settings.pages_repo, "commit", "-m", "Update Cadence status")
-    _run_git(settings.pages_repo, "push")
+    _run_git(settings, "add", str(destination.relative_to(settings.pages_repo)))
+    _run_git(settings, "commit", "-m", "Update Cadence status")
+    _run_git(settings, "push")
     return True
 
 
@@ -55,8 +55,14 @@ def _git_has_changes(repo_path, file_path):
     return bool(result.stdout.strip())
 
 
-def _run_git(repo_path, *args):
-    # type: (Path, str) -> None
-    command = ["git", *args]
+def _run_git(settings, *args):
+    # type: (Settings, str) -> None
+    command = [
+        "git",
+        "-c",
+        "user.name={}".format(settings.git_author_name),
+        "-c",
+        "user.email={}".format(settings.git_author_email),
+    ] + list(args)
     LOGGER.info("Running: %s", " ".join(command))
-    subprocess.run(command, cwd=repo_path, check=True)
+    subprocess.run(command, cwd=settings.pages_repo, check=True)
