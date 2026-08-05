@@ -9,7 +9,7 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 
 DEFAULT_DATA_DIR = PROJECT_DIR / "data"
 DEFAULT_STATUS_JSON = DEFAULT_DATA_DIR / "status.json"
-DEFAULT_PAGES_REPO = PROJECT_DIR
+DEFAULT_PAGES_REPO = Path("/home/u24ev057/some_github_things/cadence-monitor")
 DEFAULT_PAGES_STATUS_JSON = Path("data/status.json")
 
 
