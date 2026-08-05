@@ -1,25 +1,23 @@
-from __future__ import annotations
-
 import json
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Dict, Optional, Set
 
 from cadence import CadenceCheckResult
 from settings import Settings
 
 
-StatusValue = Literal["online", "offline", "warning", "maintenance", "unknown"]
-ALLOWED_STATUSES: set[str] = {"online", "offline", "warning", "maintenance", "unknown"}
+ALLOWED_STATUSES = {"online", "offline", "warning", "maintenance", "unknown"}  # type: Set[str]
 
 
 def build_status_document(
-    settings: Settings,
-    result: CadenceCheckResult,
-    previous_status_path: Path,
-) -> dict[str, Any]:
+    settings,
+    result,
+    previous_status_path,
+):
+    # type: (Settings, CadenceCheckResult, Path) -> Dict[str, Any]
     now = _utc_now()
-    status_value: StatusValue = "online" if result.online else "offline"
+    status_value = "online" if result.online else "offline"
     last_success = now if result.online else _read_previous_last_success(previous_status_path)
 
     return {
@@ -41,7 +39,8 @@ def build_status_document(
     }
 
 
-def write_status_document(path: Path, document: dict[str, Any]) -> bool:
+def write_status_document(path, document):
+    # type: (Path, Dict[str, Any]) -> bool
     path.parent.mkdir(parents=True, exist_ok=True)
     rendered = json.dumps(document, indent=2, ensure_ascii=True) + "\n"
 
@@ -52,7 +51,8 @@ def write_status_document(path: Path, document: dict[str, Any]) -> bool:
     return True
 
 
-def _read_previous_last_success(path: Path) -> str | None:
+def _read_previous_last_success(path):
+    # type: (Path) -> Optional[str]
     if not path.exists():
         return None
 
@@ -73,11 +73,13 @@ def _read_previous_last_success(path: Path) -> str | None:
     return None
 
 
-def _validate_status(status: StatusValue) -> StatusValue:
+def _validate_status(status):
+    # type: (str) -> str
     if status not in ALLOWED_STATUSES:
         raise ValueError(f"Invalid status: {status}")
     return status
 
 
-def _utc_now() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+def _utc_now():
+    # type: () -> str
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")

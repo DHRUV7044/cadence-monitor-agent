@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 import os
-from dataclasses import dataclass
 from pathlib import Path
+from typing import Tuple
 
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent
@@ -13,18 +11,18 @@ DEFAULT_PAGES_REPO = Path("/home/u24ev057/some_github_things/cadence-monitor")
 DEFAULT_PAGES_STATUS_JSON = Path("data/status.json")
 
 
-def _path_from_env(name: str, default: Path) -> Path:
+def _path_from_env(name, default):
     return Path(os.getenv(name, str(default))).expanduser().resolve()
 
 
-def _relative_path_from_env(name: str, default: Path) -> Path:
+def _relative_path_from_env(name, default):
     value = Path(os.getenv(name, str(default))).expanduser()
     if value.is_absolute():
         raise ValueError(f"{name} must be relative to the GitHub Pages repository")
     return value
 
 
-def _int_from_env(name: str, default: int) -> int:
+def _int_from_env(name, default):
     raw_value = os.getenv(name)
     if raw_value is None:
         return default
@@ -39,7 +37,8 @@ def _int_from_env(name: str, default: int) -> int:
     return value
 
 
-def _patterns_from_env(name: str, defaults: tuple[str, ...]) -> tuple[str, ...]:
+def _patterns_from_env(name, defaults):
+    # type: (str, Tuple[str, ...]) -> Tuple[str, ...]
     raw_value = os.getenv(name)
     if raw_value is None:
         return defaults
@@ -50,27 +49,42 @@ def _patterns_from_env(name: str, defaults: tuple[str, ...]) -> tuple[str, ...]:
     return patterns
 
 
-@dataclass(frozen=True)
 class Settings:
-    cadence_shell_command: str
-    top_menu_name: str
-    virtuoso_menu_name: str
-    status_json: Path
-    pages_repo: Path
-    pages_status_json: Path
-    monitor_name: str
-    monitor_host: str
-    menu_timeout_seconds: int
-    launch_timeout_seconds: int
-    successful_launch_settle_seconds: int
-    failure_patterns: tuple[str, ...]
+    def __init__(
+        self,
+        cadence_shell_command,
+        top_menu_name,
+        virtuoso_menu_name,
+        status_json,
+        pages_repo,
+        pages_status_json,
+        monitor_name,
+        monitor_host,
+        menu_timeout_seconds,
+        launch_timeout_seconds,
+        successful_launch_settle_seconds,
+        failure_patterns,
+    ):
+        # type: (str, str, str, Path, Path, Path, str, str, int, int, int, Tuple[str, ...]) -> None
+        self.cadence_shell_command = cadence_shell_command
+        self.top_menu_name = top_menu_name
+        self.virtuoso_menu_name = virtuoso_menu_name
+        self.status_json = status_json
+        self.pages_repo = pages_repo
+        self.pages_status_json = pages_status_json
+        self.monitor_name = monitor_name
+        self.monitor_host = monitor_host
+        self.menu_timeout_seconds = menu_timeout_seconds
+        self.launch_timeout_seconds = launch_timeout_seconds
+        self.successful_launch_settle_seconds = successful_launch_settle_seconds
+        self.failure_patterns = failure_patterns
 
     @property
-    def published_status_json(self) -> Path:
+    def published_status_json(self):
         return self.pages_repo / self.pages_status_json
 
 
-def load_settings() -> Settings:
+def load_settings():
     return Settings(
         cadence_shell_command=os.getenv("CADENCE_SHELL_COMMAND", "csh"),
         top_menu_name=os.getenv("CADENCE_TOP_MENU_NAME", "Cadence"),

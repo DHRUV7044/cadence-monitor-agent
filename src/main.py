@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import logging
 import sys
 
@@ -9,14 +7,14 @@ from settings import load_settings
 from status import build_status_document, write_status_document
 
 
-def configure_logging() -> None:
+def configure_logging():
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
 
-def main() -> int:
+def main():
     configure_logging()
     logger = logging.getLogger(__name__)
 

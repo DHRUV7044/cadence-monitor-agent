@@ -1,12 +1,9 @@
-from __future__ import annotations
-
 import logging
 import os
 import re
 import signal
 import shlex
 import time
-from dataclasses import dataclass
 
 import pexpect
 
@@ -17,18 +14,20 @@ LOGGER = logging.getLogger(__name__)
 MENU_ENTRY_RE = re.compile(r"^\s*(?P<choice>\d+)\s+(?P<label>.+?)\s*$")
 
 
-@dataclass(frozen=True)
 class CadenceCheckResult:
-    online: bool
-    message: str
+    def __init__(self, online, message):
+        # type: (bool, str) -> None
+        self.online = online
+        self.message = message
 
 
 class MenuSelectionError(RuntimeError):
     pass
 
 
-def check_virtuoso_license(settings: Settings) -> CadenceCheckResult:
-    child: pexpect.spawn | None = None
+def check_virtuoso_license(settings):
+    # type: (Settings) -> CadenceCheckResult
+    child = None
 
     try:
         command = shlex.split(settings.cadence_shell_command)
@@ -66,7 +65,7 @@ def check_virtuoso_license(settings: Settings) -> CadenceCheckResult:
             _terminate_process(child)
 
 
-def _select_menu_entry(child: pexpect.spawn, menu_name: str, timeout_seconds: int) -> None:
+def _select_menu_entry(child, menu_name, timeout_seconds):
     menu_output = _read_until_menu_entry(child, menu_name, timeout_seconds)
     choice = _find_menu_choice(menu_output, menu_name)
     if choice is None:
@@ -75,7 +74,7 @@ def _select_menu_entry(child: pexpect.spawn, menu_name: str, timeout_seconds: in
     child.sendline(choice)
 
 
-def _read_until_menu_entry(child: pexpect.spawn, menu_name: str, timeout_seconds: int) -> str:
+def _read_until_menu_entry(child, menu_name, timeout_seconds):
     deadline = time.monotonic() + timeout_seconds
     output = ""
 
@@ -92,7 +91,7 @@ def _read_until_menu_entry(child: pexpect.spawn, menu_name: str, timeout_seconds
     )
 
 
-def _find_menu_choice(output: str, menu_name: str) -> str | None:
+def _find_menu_choice(output, menu_name):
     expected = menu_name.casefold()
     for line in output.splitlines():
         match = MENU_ENTRY_RE.match(line)
@@ -102,11 +101,11 @@ def _find_menu_choice(output: str, menu_name: str) -> str | None:
 
 
 def _wait_for_virtuoso_startup(
-    child: pexpect.spawn,
-    settings: Settings,
-) -> CadenceCheckResult:
+    child,
+    settings,
+):
     deadline = time.monotonic() + settings.launch_timeout_seconds
-    settle_deadline: float | None = None
+    settle_deadline = None
     output = ""
 
     while time.monotonic() < deadline:
@@ -135,7 +134,7 @@ def _wait_for_virtuoso_startup(
     return CadenceCheckResult(online=False, message="Timed out waiting for Virtuoso startup")
 
 
-def _find_failure(output: str, failure_patterns: tuple[str, ...]) -> str | None:
+def _find_failure(output, failure_patterns):
     normalized_output = output.casefold()
     for pattern in failure_patterns:
         if pattern.casefold() in normalized_output:
@@ -143,7 +142,7 @@ def _find_failure(output: str, failure_patterns: tuple[str, ...]) -> str | None:
     return None
 
 
-def _read_available(child: pexpect.spawn, timeout: int) -> str:
+def _read_available(child, timeout):
     try:
         return child.read_nonblocking(size=4096, timeout=timeout)
     except pexpect.TIMEOUT:
@@ -152,7 +151,7 @@ def _read_available(child: pexpect.spawn, timeout: int) -> str:
         return child.before or ""
 
 
-def _terminate_process(child: pexpect.spawn) -> None:
+def _terminate_process(child):
     if not child.isalive():
         return
 
@@ -168,14 +167,14 @@ def _terminate_process(child: pexpect.spawn) -> None:
         _signal_process_group(child.pid, signal.SIGKILL)
 
 
-def _signal_process_group(pid: int, sig: signal.Signals) -> None:
+def _signal_process_group(pid, sig):
     try:
         os.killpg(os.getpgid(pid), sig)
     except ProcessLookupError:
         return
 
 
-def _compact_output(output: str, max_chars: int = 500) -> str:
+def _compact_output(output, max_chars=500):
     compacted = " ".join(output.split())
     if len(compacted) <= max_chars:
         return compacted

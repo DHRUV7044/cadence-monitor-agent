@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import filecmp
 import logging
 import shutil
@@ -12,7 +10,8 @@ from settings import Settings
 LOGGER = logging.getLogger(__name__)
 
 
-def publish_status(settings: Settings) -> bool:
+def publish_status(settings):
+    # type: (Settings) -> bool
     source = settings.status_json
     destination = settings.published_status_json
 
@@ -43,18 +42,21 @@ def publish_status(settings: Settings) -> bool:
     return True
 
 
-def _git_has_changes(repo_path: Path, file_path: Path) -> bool:
+def _git_has_changes(repo_path, file_path):
+    # type: (Path, Path) -> bool
     result = subprocess.run(
         ["git", "status", "--porcelain", "--", str(file_path.relative_to(repo_path))],
         cwd=repo_path,
-        text=True,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True,
         check=True,
     )
     return bool(result.stdout.strip())
 
 
-def _run_git(repo_path: Path, *args: str) -> None:
+def _run_git(repo_path, *args):
+    # type: (Path, str) -> None
     command = ["git", *args]
     LOGGER.info("Running: %s", " ".join(command))
     subprocess.run(command, cwd=repo_path, check=True)
