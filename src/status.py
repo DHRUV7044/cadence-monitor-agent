@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
-from cadence import CadenceCheckResult
+from cadence import VirtuosoStatusResults
 from settings import Settings
 
 
@@ -15,27 +15,33 @@ def build_status_document(
     result,
     previous_status_path,
 ):
-    # type: (Settings, CadenceCheckResult, Path) -> Dict[str, Any]
+    # type: (Settings, VirtuosoStatusResults, Path) -> Dict[str, Any]
     now = _india_now()
-    status_value = "online" if result.online else "offline"
-    last_success = now if result.online else _read_previous_last_success(previous_status_path)
+    services = [
+        _build_service(
+            service_id="virtuoso",
+            name="Virtuoso",
+            result=result.software,
+            previous_status_path=previous_status_path,
+            now=now,
+        ),
+        _build_service(
+            service_id="license",
+            name="License",
+            result=result.license_result,
+            previous_status_path=previous_status_path,
+            now=now,
+        ),
+    ]
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": now,
         "monitor": {
             "name": settings.monitor_name,
             "host": settings.monitor_host,
         },
-        "services": [
-            {
-                "id": "virtuoso",
-                "name": "Virtuoso",
-                "status": _validate_status(status_value),
-                "message": result.message,
-                "last_success": last_success,
-            }
-        ],
+        "services": services,
     }
 
 
@@ -51,8 +57,19 @@ def write_status_document(path, document):
     return True
 
 
-def _read_previous_last_success(path):
-    # type: (Path) -> Optional[str]
+def _build_service(service_id, name, result, previous_status_path, now):
+    last_success = now if result.online else _read_previous_last_success(previous_status_path, service_id)
+    return {
+        "id": service_id,
+        "name": name,
+        "status": _validate_status("online" if result.online else "offline"),
+        "message": result.message,
+        "last_success": last_success,
+    }
+
+
+def _read_previous_last_success(path, service_id):
+    # type: (Path, str) -> Optional[str]
     if not path.exists():
         return None
 
@@ -66,7 +83,7 @@ def _read_previous_last_success(path):
         return None
 
     for service in services:
-        if isinstance(service, dict) and service.get("id") == "virtuoso":
+        if isinstance(service, dict) and service.get("id") == service_id:
             last_success = service.get("last_success")
             return last_success if isinstance(last_success, str) else None
 

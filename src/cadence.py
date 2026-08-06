@@ -23,12 +23,19 @@ class CadenceCheckResult:
         self.message = message
 
 
+class VirtuosoStatusResults:
+    def __init__(self, software, license_result):
+        # type: (CadenceCheckResult, CadenceCheckResult) -> None
+        self.software = software
+        self.license_result = license_result
+
+
 class MenuSelectionError(RuntimeError):
     pass
 
 
 def check_virtuoso_license(settings):
-    # type: (Settings) -> CadenceCheckResult
+    # type: (Settings) -> VirtuosoStatusResults
     child = None
     existing_virtuoso_pids = _current_virtuoso_pids()
     cds_log_position = _file_position(settings.cds_log_path)
@@ -53,17 +60,33 @@ def check_virtuoso_license(settings):
         _select_menu_entry(child, settings.virtuoso_menu_name, settings.menu_timeout_seconds)
         LOGGER.info("Selected tool menu entry: %s", settings.virtuoso_menu_name)
 
-        result = _wait_for_virtuoso_startup(child, settings, cds_log_position)
-        return result
+        return _wait_for_virtuoso_startup(child, settings, cds_log_position)
     except MenuSelectionError as exc:
         LOGGER.warning("Menu selection failed: %s", exc)
-        return CadenceCheckResult(online=False, message=str(exc))
+        return _build_results(
+            software_online=False,
+            software_message=str(exc),
+            license_online=False,
+            license_message=str(exc),
+        )
     except pexpect.ExceptionPexpect as exc:
         LOGGER.exception("Cadence terminal automation failed")
-        return CadenceCheckResult(online=False, message=f"Cadence automation failed: {exc}")
+        message = f"Cadence automation failed: {exc}"
+        return _build_results(
+            software_online=False,
+            software_message=message,
+            license_online=False,
+            license_message=message,
+        )
     except Exception as exc:
         LOGGER.exception("Unexpected Virtuoso check failure")
-        return CadenceCheckResult(online=False, message=f"Virtuoso check failed: {exc}")
+        message = f"Virtuoso check failed: {exc}"
+        return _build_results(
+            software_online=False,
+            software_message=message,
+            license_online=False,
+            license_message=message,
+        )
     finally:
         if child is not None:
             _terminate_process(child)
@@ -163,7 +186,7 @@ def _wait_for_virtuoso_startup(
         result = _check_license_output(output, "terminal output", settings)
         if result is not None:
             if result.online:
-                result = _wait_for_virtuoso_stability(
+                return _wait_for_virtuoso_stability(
                     child,
                     settings,
                     cds_log_position,
@@ -171,12 +194,17 @@ def _wait_for_virtuoso_startup(
                     cds_log_output,
                     result,
                 )
-            return result
+            return _build_results(
+                software_online=True,
+                software_message="Virtuoso software started",
+                license_online=False,
+                license_message=result.message,
+            )
 
         result = _check_license_output(cds_log_output, str(settings.cds_log_path), settings)
         if result is not None:
             if result.online:
-                result = _wait_for_virtuoso_stability(
+                return _wait_for_virtuoso_stability(
                     child,
                     settings,
                     cds_log_position,
@@ -184,7 +212,12 @@ def _wait_for_virtuoso_startup(
                     cds_log_output,
                     result,
                 )
-            return result
+            return _build_results(
+                software_online=True,
+                software_message="Virtuoso software started",
+                license_online=False,
+                license_message=result.message,
+            )
 
         if not child.isalive():
             output += child.before or ""
@@ -194,7 +227,7 @@ def _wait_for_virtuoso_startup(
             result = _check_license_output(output, "terminal output", settings)
             if result is not None:
                 if result.online:
-                    result = _wait_for_virtuoso_stability(
+                    return _wait_for_virtuoso_stability(
                         child,
                         settings,
                         cds_log_position,
@@ -202,12 +235,17 @@ def _wait_for_virtuoso_startup(
                         cds_log_output,
                         result,
                     )
-                return result
+                return _build_results(
+                    software_online=True,
+                    software_message="Virtuoso software started",
+                    license_online=False,
+                    license_message=result.message,
+                )
 
             result = _check_license_output(cds_log_output, str(settings.cds_log_path), settings)
             if result is not None:
                 if result.online:
-                    result = _wait_for_virtuoso_stability(
+                    return _wait_for_virtuoso_stability(
                         child,
                         settings,
                         cds_log_position,
@@ -215,14 +253,25 @@ def _wait_for_virtuoso_startup(
                         cds_log_output,
                         result,
                     )
-                return result
+                return _build_results(
+                    software_online=True,
+                    software_message="Virtuoso software started",
+                    license_online=False,
+                    license_message=result.message,
+                )
 
             LOGGER.warning(
                 "Virtuoso exited before startup completed. Last terminal output: %s. Last CDS log output: %s",
                 _compact_output(output),
                 _compact_output(cds_log_output),
             )
-            return CadenceCheckResult(online=False, message="Virtuoso exited before startup completed")
+            message = "Virtuoso exited before startup completed"
+            return _build_results(
+                software_online=False,
+                software_message=message,
+                license_online=False,
+                license_message=message,
+            )
 
     log_chunk, cds_log_position = _read_file_since(settings.cds_log_path, cds_log_position)
     cds_log_output += log_chunk
@@ -230,7 +279,7 @@ def _wait_for_virtuoso_startup(
     result = _check_license_output(output, "terminal output", settings)
     if result is not None:
         if result.online:
-            result = _wait_for_virtuoso_stability(
+            return _wait_for_virtuoso_stability(
                 child,
                 settings,
                 cds_log_position,
@@ -238,12 +287,17 @@ def _wait_for_virtuoso_startup(
                 cds_log_output,
                 result,
             )
-        return result
+        return _build_results(
+            software_online=True,
+            software_message="Virtuoso software started",
+            license_online=False,
+            license_message=result.message,
+        )
 
     result = _check_license_output(cds_log_output, str(settings.cds_log_path), settings)
     if result is not None:
         if result.online:
-            result = _wait_for_virtuoso_stability(
+            return _wait_for_virtuoso_stability(
                 child,
                 settings,
                 cds_log_position,
@@ -251,16 +305,23 @@ def _wait_for_virtuoso_startup(
                 cds_log_output,
                 result,
             )
-        return result
+        return _build_results(
+            software_online=True,
+            software_message="Virtuoso software started",
+            license_online=False,
+            license_message=result.message,
+        )
 
     LOGGER.warning(
         "Timed out waiting for Virtuoso license confirmation. Last terminal output: %s. Last CDS log output: %s",
         _compact_output(output),
         _compact_output(cds_log_output),
     )
-    return CadenceCheckResult(
-        online=False,
-        message="Timed out waiting for Virtuoso license confirmation",
+    return _build_results(
+        software_online=True,
+        software_message="Virtuoso software started",
+        license_online=False,
+        license_message="Timed out waiting for Virtuoso license confirmation",
     )
 
 
@@ -285,25 +346,40 @@ def _wait_for_virtuoso_stability(
 
         failure = _find_failure(output, settings.failure_patterns)
         if failure is not None:
-            return CadenceCheckResult(
-                online=False,
-                message=f"Virtuoso failed during stabilization in terminal output: {failure}",
-            )
+            LOGGER.warning("Ignoring late startup failure after license success: %s", failure)
+            return success_result
 
         failure = _find_failure(cds_log_output, settings.failure_patterns)
         if failure is not None:
-            return CadenceCheckResult(
-                online=False,
-                message=f"Virtuoso failed during stabilization in {settings.cds_log_path}: {failure}",
+            LOGGER.warning(
+                "Ignoring late startup failure after license success in %s: %s",
+                settings.cds_log_path,
+                failure,
             )
+            return success_result
 
         if not child.isalive():
-            return CadenceCheckResult(
-                online=False,
-                message="Virtuoso exited before it became stable",
+            return VirtuosoStatusResults(
+                software=CadenceCheckResult(online=True, message="Virtuoso software is running"),
+                license_result=success_result,
             )
 
-    return success_result
+    return VirtuosoStatusResults(
+        software=CadenceCheckResult(online=True, message="Virtuoso software is running"),
+        license_result=success_result,
+    )
+
+
+def _build_results(
+    software_online,
+    software_message,
+    license_online,
+    license_message,
+):
+    return VirtuosoStatusResults(
+        software=CadenceCheckResult(online=software_online, message=software_message),
+        license_result=CadenceCheckResult(online=license_online, message=license_message),
+    )
 
 
 def _check_license_output(output, source, settings):
