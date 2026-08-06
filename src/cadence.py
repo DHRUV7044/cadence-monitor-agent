@@ -38,7 +38,7 @@ def check_virtuoso_license(settings):
     # type: (Settings) -> VirtuosoStatusResults
     child = None
     existing_virtuoso_pids = _current_virtuoso_pids()
-    cds_log_position = _file_position(settings.cds_log_path)
+    cds_log_position = _initial_cds_log_position(settings.cds_log_path)
 
     try:
         command = shlex.split(settings.cadence_shell_command)
@@ -436,6 +436,29 @@ def _file_position(path):
         return 0
     except OSError as exc:
         LOGGER.warning("Could not inspect CDS log file %s: %s", path, exc)
+        return 0
+
+
+def _initial_cds_log_position(path):
+    try:
+        if not path.exists():
+            return 0
+
+        current_size = path.stat().st_size
+        if current_size == 0:
+            return 0
+
+        lookback = min(current_size, 65536)
+        with path.open("rb") as handle:
+            handle.seek(current_size - lookback)
+            tail = handle.read().decode("utf-8", errors="replace")
+
+        marker = tail.rfind("# Program start time:")
+        if marker != -1:
+            return current_size - lookback + marker
+        return max(0, current_size - lookback)
+    except OSError as exc:
+        LOGGER.warning("Could not determine CDS log start position for %s: %s", path, exc)
         return 0
 
 
