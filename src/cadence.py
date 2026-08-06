@@ -31,6 +31,7 @@ def check_virtuoso_license(settings):
     # type: (Settings) -> CadenceCheckResult
     child = None
     existing_virtuoso_pids = _current_virtuoso_pids()
+    cds_log_position = _file_position(settings.cds_log_path)
 
     try:
         command = shlex.split(settings.cadence_shell_command)
@@ -52,7 +53,7 @@ def check_virtuoso_license(settings):
         _select_menu_entry(child, settings.virtuoso_menu_name, settings.menu_timeout_seconds)
         LOGGER.info("Selected tool menu entry: %s", settings.virtuoso_menu_name)
 
-        return _wait_for_virtuoso_startup(child, settings)
+        return _wait_for_virtuoso_startup(child, settings, cds_log_position)
     except MenuSelectionError as exc:
         LOGGER.warning("Menu selection failed: %s", exc)
         return CadenceCheckResult(online=False, message=str(exc))
@@ -143,42 +144,106 @@ def _normalize_menu_label(label):
 def _wait_for_virtuoso_startup(
     child,
     settings,
+    cds_log_position,
 ):
     deadline = time.monotonic() + settings.launch_timeout_seconds
-    settle_deadline = None
     output = ""
+    cds_log_output = ""
 
     while time.monotonic() < deadline:
         chunk = _read_available(child, timeout=1)
         if chunk:
             output += chunk
-            failure = _find_failure(output, settings.failure_patterns)
-            if failure is not None:
-                return CadenceCheckResult(online=False, message=f"Virtuoso failed: {failure}")
+
+        log_chunk, cds_log_position = _read_file_since(settings.cds_log_path, cds_log_position)
+        if log_chunk:
+            cds_log_output += log_chunk
+
+        result = _check_license_output(output, "terminal output", settings)
+        if result is not None:
+            return result
+
+        result = _check_license_output(cds_log_output, str(settings.cds_log_path), settings)
+        if result is not None:
+            return result
 
         if not child.isalive():
             output += child.before or ""
-            failure = _find_failure(output, settings.failure_patterns)
-            if failure is not None:
-                return CadenceCheckResult(online=False, message=f"Virtuoso failed: {failure}")
+            log_chunk, cds_log_position = _read_file_since(settings.cds_log_path, cds_log_position)
+            cds_log_output += log_chunk
+
+            result = _check_license_output(output, "terminal output", settings)
+            if result is not None:
+                return result
+
+            result = _check_license_output(cds_log_output, str(settings.cds_log_path), settings)
+            if result is not None:
+                return result
+
+            LOGGER.warning(
+                "Virtuoso exited before startup completed. Last terminal output: %s. Last CDS log output: %s",
+                _compact_output(output),
+                _compact_output(cds_log_output),
+            )
             return CadenceCheckResult(online=False, message="Virtuoso exited before startup completed")
 
-        if settle_deadline is None:
-            settle_deadline = time.monotonic() + settings.successful_launch_settle_seconds
-        elif time.monotonic() >= settle_deadline:
-            return CadenceCheckResult(online=True, message="Virtuoso started successfully")
+    log_chunk, cds_log_position = _read_file_since(settings.cds_log_path, cds_log_position)
+    cds_log_output += log_chunk
+
+    result = _check_license_output(output, "terminal output", settings)
+    if result is not None:
+        return result
+
+    result = _check_license_output(cds_log_output, str(settings.cds_log_path), settings)
+    if result is not None:
+        return result
+
+    LOGGER.warning(
+        "Timed out waiting for Virtuoso license confirmation. Last terminal output: %s. Last CDS log output: %s",
+        _compact_output(output),
+        _compact_output(cds_log_output),
+    )
+    return CadenceCheckResult(
+        online=False,
+        message="Timed out waiting for Virtuoso license confirmation",
+    )
+
+
+def _check_license_output(output, source, settings):
+    # type: (str, str, Settings) -> CadenceCheckResult | None
+    if not output:
+        return None
+
+    success = _find_match(output, settings.license_success_patterns)
+    if success is not None:
+        return CadenceCheckResult(
+            online=True,
+            message=f"Virtuoso license confirmed in {source}: {success}",
+        )
 
     failure = _find_failure(output, settings.failure_patterns)
     if failure is not None:
-        return CadenceCheckResult(online=False, message=f"Virtuoso failed: {failure}")
-    return CadenceCheckResult(online=False, message="Timed out waiting for Virtuoso startup")
+        return CadenceCheckResult(
+            online=False,
+            message=f"Virtuoso failed in {source}: {failure}",
+        )
+    return None
 
 
 def _find_failure(output, failure_patterns):
+    return _find_match(output, failure_patterns)
+
+
+def _find_match(output, patterns):
     normalized_output = output.casefold()
-    for pattern in failure_patterns:
+    for pattern in patterns:
         if pattern.casefold() in normalized_output:
             return pattern
+        try:
+            if re.search(pattern, output, re.IGNORECASE):
+                return pattern
+        except re.error:
+            LOGGER.warning("Ignoring invalid output match pattern: %s", pattern)
     return None
 
 
@@ -189,6 +254,31 @@ def _read_available(child, timeout):
         return ""
     except pexpect.EOF:
         return child.before or ""
+
+
+def _file_position(path):
+    try:
+        return path.stat().st_size
+    except FileNotFoundError:
+        return 0
+    except OSError as exc:
+        LOGGER.warning("Could not inspect CDS log file %s: %s", path, exc)
+        return 0
+
+
+def _read_file_since(path, position):
+    try:
+        if not path.exists():
+            return "", position
+
+        current_size = path.stat().st_size
+        read_from = position if current_size >= position else 0
+        with path.open("rb") as handle:
+            handle.seek(read_from)
+            return handle.read().decode("utf-8", errors="replace"), current_size
+    except OSError as exc:
+        LOGGER.warning("Could not read CDS log file %s: %s", path, exc)
+        return "", position
 
 
 def _terminate_process(child):

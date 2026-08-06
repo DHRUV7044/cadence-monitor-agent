@@ -9,9 +9,29 @@ DEFAULT_DATA_DIR = PROJECT_DIR / "data"
 DEFAULT_STATUS_JSON = DEFAULT_DATA_DIR / "status.json"
 DEFAULT_PAGES_REPO = Path("/home/u24ev057/some_github_things/cadence-monitor")
 DEFAULT_PAGES_STATUS_JSON = Path("data/status.json")
+DEFAULT_CDS_LOG_PATH = Path.home() / "CDS.log"
 DEFAULT_GIT_PATH = "/home/u24ev057/local/bin/git" #this is for vlsi lab server account path change it with path in your machine you want to run script on
 DEFAULT_GIT_AUTHOR_NAME = "dhruv7044"
 DEFAULT_GIT_AUTHOR_EMAIL = "dhruve.shingala@gmail.com"
+DEFAULT_VIRTUOSO_LICENSE_SUCCESS_PATTERNS = (
+    "Virtuoso Framework License (111) was checked out successfully",
+    "License checkout succeeded",
+    "Checkout succeeded",
+    "license acquired",
+    "license granted",
+    r"virtuoso.*licen[cs]e.*was\s+checked\s+out\s+successfully",
+    r"licen[cs]e.*was\s+checked\s+out\s+successfully",
+)
+DEFAULT_VIRTUOSO_FAILURE_PATTERNS = (
+    "License checkout failed",
+    "Unable to obtain license",
+    "No such feature exists",
+    "Cannot connect to license server",
+    "License server machine is down",
+    r"licen[cs]e.*unable.*check(?:ed)?\s*out",
+    r"unable.*check(?:ed)?\s*out.*licen[cs]e",
+    r"licen[cs]e.*check(?:ed)?\s*out.*fail(?:ed|ure)?",
+)
 
 
 def _path_from_env(name, default):
@@ -61,6 +81,7 @@ class Settings:
         status_json,
         pages_repo,
         pages_status_json,
+        cds_log_path,
         monitor_name,
         monitor_host,
         git_path,
@@ -68,7 +89,7 @@ class Settings:
         git_author_email,
         menu_timeout_seconds,
         launch_timeout_seconds,
-        successful_launch_settle_seconds,
+        license_success_patterns,
         failure_patterns,
     ):
         self.cadence_shell_command = cadence_shell_command
@@ -77,6 +98,7 @@ class Settings:
         self.status_json = status_json
         self.pages_repo = pages_repo
         self.pages_status_json = pages_status_json
+        self.cds_log_path = cds_log_path
         self.monitor_name = monitor_name
         self.monitor_host = monitor_host
         self.git_path = git_path
@@ -84,7 +106,7 @@ class Settings:
         self.git_author_email = git_author_email
         self.menu_timeout_seconds = menu_timeout_seconds
         self.launch_timeout_seconds = launch_timeout_seconds
-        self.successful_launch_settle_seconds = successful_launch_settle_seconds
+        self.license_success_patterns = license_success_patterns
         self.failure_patterns = failure_patterns
 
     @property
@@ -103,6 +125,7 @@ def load_settings():
             "PAGES_STATUS_JSON",
             DEFAULT_PAGES_STATUS_JSON,
         ),
+        cds_log_path=_path_from_env("CDS_LOG_PATH", DEFAULT_CDS_LOG_PATH),
         monitor_name=os.getenv("MONITOR_NAME", "Cadence Status Monitor"),
         monitor_host=os.getenv("MONITOR_HOST", "Lab Monitor"),
         git_path=os.getenv("GIT_PATH", DEFAULT_GIT_PATH),
@@ -110,15 +133,12 @@ def load_settings():
         git_author_email=os.getenv("GIT_AUTHOR_EMAIL", DEFAULT_GIT_AUTHOR_EMAIL),
         menu_timeout_seconds=_int_from_env("MENU_TIMEOUT_SECONDS", 30),
         launch_timeout_seconds=_int_from_env("LAUNCH_TIMEOUT_SECONDS", 60),
-        successful_launch_settle_seconds=_int_from_env("SUCCESSFUL_LAUNCH_SETTLE_SECONDS", 10),
+        license_success_patterns=_patterns_from_env(
+            "VIRTUOSO_LICENSE_SUCCESS_PATTERNS",
+            DEFAULT_VIRTUOSO_LICENSE_SUCCESS_PATTERNS,
+        ),
         failure_patterns=_patterns_from_env(
             "VIRTUOSO_FAILURE_PATTERNS",
-            (
-                "License checkout failed",
-                "Unable to obtain license",
-                "No such feature exists",
-                "Cannot connect to license server",
-                "License server machine is down",
-            ),
+            DEFAULT_VIRTUOSO_FAILURE_PATTERNS,
         ),
     )
