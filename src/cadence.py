@@ -53,7 +53,8 @@ def check_virtuoso_license(settings):
         _select_menu_entry(child, settings.virtuoso_menu_name, settings.menu_timeout_seconds)
         LOGGER.info("Selected tool menu entry: %s", settings.virtuoso_menu_name)
 
-        return _wait_for_virtuoso_startup(child, settings, cds_log_position)
+        result = _wait_for_virtuoso_startup(child, settings, cds_log_position)
+        return result
     except MenuSelectionError as exc:
         LOGGER.warning("Menu selection failed: %s", exc)
         return CadenceCheckResult(online=False, message=str(exc))
@@ -161,10 +162,28 @@ def _wait_for_virtuoso_startup(
 
         result = _check_license_output(output, "terminal output", settings)
         if result is not None:
+            if result.online:
+                result = _wait_for_virtuoso_stability(
+                    child,
+                    settings,
+                    cds_log_position,
+                    output,
+                    cds_log_output,
+                    result,
+                )
             return result
 
         result = _check_license_output(cds_log_output, str(settings.cds_log_path), settings)
         if result is not None:
+            if result.online:
+                result = _wait_for_virtuoso_stability(
+                    child,
+                    settings,
+                    cds_log_position,
+                    output,
+                    cds_log_output,
+                    result,
+                )
             return result
 
         if not child.isalive():
@@ -174,10 +193,28 @@ def _wait_for_virtuoso_startup(
 
             result = _check_license_output(output, "terminal output", settings)
             if result is not None:
+                if result.online:
+                    result = _wait_for_virtuoso_stability(
+                        child,
+                        settings,
+                        cds_log_position,
+                        output,
+                        cds_log_output,
+                        result,
+                    )
                 return result
 
             result = _check_license_output(cds_log_output, str(settings.cds_log_path), settings)
             if result is not None:
+                if result.online:
+                    result = _wait_for_virtuoso_stability(
+                        child,
+                        settings,
+                        cds_log_position,
+                        output,
+                        cds_log_output,
+                        result,
+                    )
                 return result
 
             LOGGER.warning(
@@ -192,10 +229,28 @@ def _wait_for_virtuoso_startup(
 
     result = _check_license_output(output, "terminal output", settings)
     if result is not None:
+        if result.online:
+            result = _wait_for_virtuoso_stability(
+                child,
+                settings,
+                cds_log_position,
+                output,
+                cds_log_output,
+                result,
+            )
         return result
 
     result = _check_license_output(cds_log_output, str(settings.cds_log_path), settings)
     if result is not None:
+        if result.online:
+            result = _wait_for_virtuoso_stability(
+                child,
+                settings,
+                cds_log_position,
+                output,
+                cds_log_output,
+                result,
+            )
         return result
 
     LOGGER.warning(
@@ -207,6 +262,48 @@ def _wait_for_virtuoso_startup(
         online=False,
         message="Timed out waiting for Virtuoso license confirmation",
     )
+
+
+def _wait_for_virtuoso_stability(
+    child,
+    settings,
+    cds_log_position,
+    output,
+    cds_log_output,
+    success_result,
+):
+    stability_deadline = time.monotonic() + min(5, settings.launch_timeout_seconds)
+
+    while time.monotonic() < stability_deadline:
+        chunk = _read_available(child, timeout=1)
+        if chunk:
+            output += chunk
+
+        log_chunk, cds_log_position = _read_file_since(settings.cds_log_path, cds_log_position)
+        if log_chunk:
+            cds_log_output += log_chunk
+
+        failure = _find_failure(output, settings.failure_patterns)
+        if failure is not None:
+            return CadenceCheckResult(
+                online=False,
+                message=f"Virtuoso failed during stabilization in terminal output: {failure}",
+            )
+
+        failure = _find_failure(cds_log_output, settings.failure_patterns)
+        if failure is not None:
+            return CadenceCheckResult(
+                online=False,
+                message=f"Virtuoso failed during stabilization in {settings.cds_log_path}: {failure}",
+            )
+
+        if not child.isalive():
+            return CadenceCheckResult(
+                online=False,
+                message="Virtuoso exited before it became stable",
+            )
+
+    return success_result
 
 
 def _check_license_output(output, source, settings):
