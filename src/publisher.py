@@ -34,7 +34,7 @@ def publish_status(settings):
     if not same_file:
         shutil.copy2(source, destination)
 
-    if not _git_has_changes(settings.pages_repo, destination):
+    if not _git_has_changes(settings, destination):
         LOGGER.info("No git changes after copying status file")
         return False
 
@@ -44,11 +44,17 @@ def publish_status(settings):
     return True
 
 
-def _git_has_changes(repo_path, file_path):
-    # type: (Path, Path) -> bool
+def _git_has_changes(settings, file_path):
+    # type: (Settings, Path) -> bool
     result = subprocess.run(
-        ["git", "status", "--porcelain", "--", str(file_path.relative_to(repo_path))],
-        cwd=repo_path,
+        [
+            settings.git_path,
+            "status",
+            "--porcelain",
+            "--",
+            str(file_path.relative_to(settings.pages_repo)),
+        ],
+        cwd=settings.pages_repo,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         universal_newlines=True,
@@ -60,7 +66,7 @@ def _git_has_changes(repo_path, file_path):
 def _run_git(settings, *args):
     # type: (Settings, str) -> None
     command = [
-        "git",
+        settings.git_path,
         "-c",
         "user.name={}".format(settings.git_author_name),
         "-c",

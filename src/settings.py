@@ -9,6 +9,7 @@ DEFAULT_DATA_DIR = PROJECT_DIR / "data"
 DEFAULT_STATUS_JSON = DEFAULT_DATA_DIR / "status.json"
 DEFAULT_PAGES_REPO = Path("/home/u24ev057/some_github_things/cadence-monitor")
 DEFAULT_PAGES_STATUS_JSON = Path("data/status.json")
+DEFAULT_GIT_PATH = "/home/u24ev057/local/bin/git" #this is for vlsi lab server account path change it with path in your machine you want to run script on
 DEFAULT_GIT_AUTHOR_NAME = "dhruv7044"
 DEFAULT_GIT_AUTHOR_EMAIL = "dhruve.shingala@gmail.com"
 
@@ -62,6 +63,7 @@ class Settings:
         pages_status_json,
         monitor_name,
         monitor_host,
+        git_path,
         git_author_name,
         git_author_email,
         menu_timeout_seconds,
@@ -77,6 +79,7 @@ class Settings:
         self.pages_status_json = pages_status_json
         self.monitor_name = monitor_name
         self.monitor_host = monitor_host
+        self.git_path = git_path
         self.git_author_name = git_author_name
         self.git_author_email = git_author_email
         self.menu_timeout_seconds = menu_timeout_seconds
@@ -102,6 +105,7 @@ def load_settings():
         ),
         monitor_name=os.getenv("MONITOR_NAME", "Cadence Status Monitor"),
         monitor_host=os.getenv("MONITOR_HOST", "Lab Monitor"),
+        git_path=os.getenv("GIT_PATH", DEFAULT_GIT_PATH),
         git_author_name=os.getenv("GIT_AUTHOR_NAME", DEFAULT_GIT_AUTHOR_NAME),
         git_author_email=os.getenv("GIT_AUTHOR_EMAIL", DEFAULT_GIT_AUTHOR_EMAIL),
         menu_timeout_seconds=_int_from_env("MENU_TIMEOUT_SECONDS", 30),
